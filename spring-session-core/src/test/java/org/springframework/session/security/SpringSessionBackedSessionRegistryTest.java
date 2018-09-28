@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 the original author or authors.
+ * Copyright 2014-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.session.security;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,7 +75,9 @@ public class SpringSessionBackedSessionRegistryTest {
 				.getSessionInformation(SESSION_ID);
 
 		assertThat(sessionInfo.getSessionId()).isEqualTo(SESSION_ID);
-		assertThat(sessionInfo.getLastRequest().toInstant()).isEqualTo(NOW);
+		assertThat(
+				sessionInfo.getLastRequest().toInstant().truncatedTo(ChronoUnit.MILLIS))
+						.isEqualTo(NOW.truncatedTo(ChronoUnit.MILLIS));
 		assertThat(sessionInfo.getPrincipal()).isEqualTo(USER_NAME);
 		assertThat(sessionInfo.isExpired()).isFalse();
 	}
@@ -90,7 +93,9 @@ public class SpringSessionBackedSessionRegistryTest {
 				.getSessionInformation(SESSION_ID);
 
 		assertThat(sessionInfo.getSessionId()).isEqualTo(SESSION_ID);
-		assertThat(sessionInfo.getLastRequest().toInstant()).isEqualTo(NOW);
+		assertThat(
+				sessionInfo.getLastRequest().toInstant().truncatedTo(ChronoUnit.MILLIS))
+				.isEqualTo(NOW.truncatedTo(ChronoUnit.MILLIS));
 		assertThat(sessionInfo.getPrincipal()).isEqualTo(USER_NAME);
 		assertThat(sessionInfo.isExpired()).isTrue();
 	}
@@ -162,9 +167,8 @@ public class SpringSessionBackedSessionRegistryTest {
 		Map<String, Session> sessions = new LinkedHashMap<>();
 		sessions.put(session1.getId(), session1);
 		sessions.put(session2.getId(), session2);
-		when(this.sessionRepository.findByIndexNameAndIndexValue(
-				FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, USER_NAME))
-						.thenReturn(sessions);
+		when(this.sessionRepository.findByPrincipalName(USER_NAME))
+				.thenReturn(sessions);
 	}
 
 }

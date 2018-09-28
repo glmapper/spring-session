@@ -16,6 +16,8 @@
 
 package org.springframework.session.data.redis;
 
+import java.time.Instant;
+
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -28,6 +30,7 @@ import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.test.context.web.WebAppConfiguration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * Integration tests for {@link ReactiveRedisOperationsSessionRepository}.
@@ -189,6 +192,31 @@ public class ReactiveRedisOperationsSessionRepositoryITests extends AbstractRedi
 
 		assertThat(this.repository.findById(toSave.getId()).block()).isNotNull();
 		assertThat(this.repository.findById(originalId).block()).isNull();
+	}
+
+	// gh-1111
+	@Test
+	public void changeSessionSaveOldSessionInstance() {
+		ReactiveRedisOperationsSessionRepository.RedisSession toSave = this.repository
+				.createSession().block();
+		String sessionId = toSave.getId();
+
+		this.repository.save(toSave).block();
+
+		ReactiveRedisOperationsSessionRepository.RedisSession session = this.repository
+				.findById(sessionId).block();
+		session.changeSessionId();
+		session.setLastAccessedTime(Instant.now());
+		this.repository.save(session).block();
+
+		toSave.setLastAccessedTime(Instant.now());
+
+		assertThatExceptionOfType(IllegalStateException.class)
+				.isThrownBy(() -> this.repository.save(toSave).block())
+				.withMessage("Session was invalidated");
+
+		assertThat(this.repository.findById(sessionId).block()).isNull();
+		assertThat(this.repository.findById(session.getId()).block()).isNotNull();
 	}
 
 	@Configuration

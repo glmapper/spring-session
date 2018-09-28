@@ -27,9 +27,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
 import org.springframework.data.redis.core.ReactiveRedisOperations;
+import org.springframework.data.redis.serializer.RedisSerializationContext;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.session.data.redis.ReactiveRedisOperationsSessionRepository;
 import org.springframework.session.data.redis.RedisFlushMode;
 import org.springframework.session.data.redis.config.annotation.SpringSessionRedisConnectionFactory;
+import org.springframework.session.data.redis.config.annotation.SpringSessionRedisOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +71,22 @@ public class RedisWebSessionConfigurationTests {
 		ReactiveRedisOperationsSessionRepository repository = this.context
 				.getBean(ReactiveRedisOperationsSessionRepository.class);
 		assertThat(repository).isNotNull();
+	}
+
+	@Test
+	public void springSessionRedisOperationsResolvingConfiguration() {
+		registerAndRefresh(RedisConfig.class,
+				SpringSessionRedisOperationsResolvingConfig.class);
+
+		ReactiveRedisOperationsSessionRepository repository = this.context
+				.getBean(ReactiveRedisOperationsSessionRepository.class);
+		assertThat(repository).isNotNull();
+		ReactiveRedisOperations<String, Object> springSessionRedisOperations = this.context
+				.getBean(SpringSessionRedisOperationsResolvingConfig.class)
+				.getSpringSessionRedisOperations();
+		assertThat(springSessionRedisOperations).isNotNull();
+		assertThat((ReactiveRedisOperations) ReflectionTestUtils.getField(repository,
+				"sessionRedisOperations")).isEqualTo(springSessionRedisOperations);
 	}
 
 	@Test
@@ -181,6 +200,36 @@ public class RedisWebSessionConfigurationTests {
 						.hasMessageContaining("expected single matching bean but found 2");
 	}
 
+	@Test
+	@SuppressWarnings("unchecked")
+	public void customRedisSerializerConfig() {
+		registerAndRefresh(RedisConfig.class, CustomRedisSerializerConfig.class);
+
+		ReactiveRedisOperationsSessionRepository repository = this.context
+				.getBean(ReactiveRedisOperationsSessionRepository.class);
+		RedisSerializer<Object> redisSerializer = this.context
+				.getBean("springSessionDefaultRedisSerializer", RedisSerializer.class);
+		assertThat(repository).isNotNull();
+		assertThat(redisSerializer).isNotNull();
+		ReactiveRedisOperations redisOperations = (ReactiveRedisOperations) ReflectionTestUtils
+				.getField(repository, "sessionRedisOperations");
+		assertThat(redisOperations).isNotNull();
+		RedisSerializationContext serializationContext = redisOperations
+				.getSerializationContext();
+		assertThat(ReflectionTestUtils.getField(
+				serializationContext.getValueSerializationPair().getReader(),
+				"serializer")).isEqualTo(redisSerializer);
+		assertThat(ReflectionTestUtils.getField(
+				serializationContext.getValueSerializationPair().getWriter(),
+				"serializer")).isEqualTo(redisSerializer);
+		assertThat(ReflectionTestUtils.getField(
+				serializationContext.getHashValueSerializationPair().getReader(),
+				"serializer")).isEqualTo(redisSerializer);
+		assertThat(ReflectionTestUtils.getField(
+				serializationContext.getHashValueSerializationPair().getWriter(),
+				"serializer")).isEqualTo(redisSerializer);
+	}
+
 	private void registerAndRefresh(Class<?>... annotatedClasses) {
 		this.context.register(annotatedClasses);
 		this.context.refresh();
@@ -198,6 +247,18 @@ public class RedisWebSessionConfigurationTests {
 
 	@EnableRedisWebSession
 	static class DefaultConfig {
+
+	}
+
+	@EnableRedisWebSession
+	static class SpringSessionRedisOperationsResolvingConfig {
+
+		@SpringSessionRedisOperations
+		private ReactiveRedisOperations<String, Object> springSessionRedisOperations;
+
+		public ReactiveRedisOperations<String, Object> getSpringSessionRedisOperations() {
+			return this.springSessionRedisOperations;
+		}
 
 	}
 
@@ -271,6 +332,17 @@ public class RedisWebSessionConfigurationTests {
 		@Bean
 		public ReactiveRedisConnectionFactory secondaryRedisConnectionFactory() {
 			return mock(ReactiveRedisConnectionFactory.class);
+		}
+
+	}
+
+	@EnableRedisWebSession
+	static class CustomRedisSerializerConfig {
+
+		@Bean
+		@SuppressWarnings("unchecked")
+		public RedisSerializer<Object> springSessionDefaultRedisSerializer() {
+			return mock(RedisSerializer.class);
 		}
 
 	}

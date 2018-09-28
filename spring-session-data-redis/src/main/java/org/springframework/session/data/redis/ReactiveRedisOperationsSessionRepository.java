@@ -118,6 +118,15 @@ public class ReactiveRedisOperationsSessionRepository implements
 		this.redisFlushMode = redisFlushMode;
 	}
 
+	/**
+	 * Returns the {@link ReactiveRedisOperations} used for sessions.
+	 * @return the {@link ReactiveRedisOperations} used for sessions
+	 * @since 2.1.0
+	 */
+	public ReactiveRedisOperations<String, Object> getSessionRedisOperations() {
+		return this.sessionRedisOperations;
+	}
+
 	@Override
 	public Mono<RedisSession> createSession() {
 		return Mono.defer(() -> {
@@ -134,24 +143,38 @@ public class ReactiveRedisOperationsSessionRepository implements
 
 	@Override
 	public Mono<Void> save(RedisSession session) {
-		return session.saveDelta().and((s) -> {
-			if (session.isNew) {
-				session.setNew(false);
-			}
-
-			s.onComplete();
-		});
+		Mono<Void> result = session.saveChangeSessionId().and(session.saveDelta())
+				.and((s) -> {
+					session.isNew = false;
+					s.onComplete();
+				});
+		if (session.isNew) {
+			return result;
+		}
+		else {
+			String sessionKey = getSessionKey(
+					session.hasChangedSessionId() ? session.originalSessionId
+							: session.getId());
+			return this.sessionRedisOperations.hasKey(sessionKey)
+					.flatMap((exists) -> exists ? result
+							: Mono.error(new IllegalStateException(
+									"Session was invalidated")));
+		}
 	}
 
 	@Override
 	public Mono<RedisSession> findById(String id) {
 		String sessionKey = getSessionKey(id);
 
+		// @formatter:off
 		return this.sessionRedisOperations.opsForHash().entries(sessionKey)
 				.collectMap((e) -> e.getKey().toString(), Map.Entry::getValue)
-				.filter((map) -> !map.isEmpty()).map(new SessionMapper(id))
-				.filter((session) -> !session.isExpired()).map(RedisSession::new)
+				.filter((map) -> !map.isEmpty())
+				.map(new SessionMapper(id))
+				.filter((session) -> !session.isExpired())
+				.map(RedisSession::new)
 				.switchIfEmpty(Mono.defer(() -> deleteById(id).then(Mono.empty())));
+		// @formatter:on
 	}
 
 	@Override
@@ -276,12 +299,8 @@ public class ReactiveRedisOperationsSessionRepository implements
 			return this.cached.isExpired();
 		}
 
-		public void setNew(boolean isNew) {
-			this.isNew = isNew;
-		}
-
-		public boolean isNew() {
-			return this.isNew;
+		private boolean hasChangedSessionId() {
+			return !getId().equals(this.originalSessionId);
 		}
 
 		private void flushImmediateIfNecessary() {
@@ -296,38 +315,35 @@ public class ReactiveRedisOperationsSessionRepository implements
 		}
 
 		private Mono<Void> saveDelta() {
-			String sessionId = getId();
-			Mono<Void> changeSessionId = saveChangeSessionId(sessionId);
-
 			if (this.delta.isEmpty()) {
-				return changeSessionId.and(Mono.empty());
+				return Mono.empty();
 			}
 
-			String sessionKey = getSessionKey(sessionId);
-
+			String sessionKey = getSessionKey(getId());
 			Mono<Boolean> update = ReactiveRedisOperationsSessionRepository.this.sessionRedisOperations
 					.opsForHash().putAll(sessionKey, this.delta);
-
 			Mono<Boolean> setTtl = ReactiveRedisOperationsSessionRepository.this.sessionRedisOperations
 					.expire(sessionKey, getMaxInactiveInterval());
 
-			return changeSessionId.and(update).and(setTtl).and((s) -> {
+			return update.and(setTtl).and((s) -> {
 				this.delta.clear();
 				s.onComplete();
 			}).then();
 		}
 
-		private Mono<Void> saveChangeSessionId(String sessionId) {
-			if (sessionId.equals(this.originalSessionId)) {
+		private Mono<Void> saveChangeSessionId() {
+			if (!hasChangedSessionId()) {
 				return Mono.empty();
 			}
+
+			String sessionId = getId();
 
 			Publisher<Void> replaceSessionId = (s) -> {
 				this.originalSessionId = sessionId;
 				s.onComplete();
 			};
 
-			if (isNew()) {
+			if (this.isNew) {
 				return Mono.from(replaceSessionId);
 			}
 			else {

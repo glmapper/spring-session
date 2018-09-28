@@ -16,6 +16,7 @@
 
 package org.springframework.session.data.redis;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
@@ -190,9 +191,10 @@ public class RedisOperationsSessionRepositoryITests extends AbstractRedisITests 
 
 		String body = "RedisOperationsSessionRepositoryITests:sessions:expires:"
 				+ toSave.getId();
-		String channel = ":expired";
-		DefaultMessage message = new DefaultMessage(channel.getBytes("UTF-8"),
-				body.getBytes("UTF-8"));
+		String channel = "__keyevent@0__:expired";
+		DefaultMessage message = new DefaultMessage(
+				channel.getBytes(StandardCharsets.UTF_8),
+				body.getBytes(StandardCharsets.UTF_8));
 		byte[] pattern = new byte[] {};
 		this.repository.onMessage(message, pattern);
 
@@ -358,9 +360,10 @@ public class RedisOperationsSessionRepositoryITests extends AbstractRedisITests 
 
 		String body = "RedisOperationsSessionRepositoryITests:sessions:expires:"
 				+ toSave.getId();
-		String channel = ":expired";
-		DefaultMessage message = new DefaultMessage(channel.getBytes("UTF-8"),
-				body.getBytes("UTF-8"));
+		String channel = "__keyevent@0__:expired";
+		DefaultMessage message = new DefaultMessage(
+				channel.getBytes(StandardCharsets.UTF_8),
+				body.getBytes(StandardCharsets.UTF_8));
 		byte[] pattern = new byte[] {};
 		this.repository.onMessage(message, pattern);
 
@@ -579,6 +582,22 @@ public class RedisOperationsSessionRepositoryITests extends AbstractRedisITests 
 
 		assertThat(this.repository.findById(toSave.getId())).isNotNull();
 		assertThat(this.repository.findById(originalId)).isNull();
+	}
+
+	// gh-1137
+	@Test
+	public void changeSessionIdWhenSessionIsDeleted() {
+		RedisSession toSave = this.repository.createSession();
+		String sessionId = toSave.getId();
+		this.repository.save(toSave);
+
+		this.repository.deleteById(sessionId);
+
+		toSave.changeSessionId();
+		this.repository.save(toSave);
+
+		assertThat(this.repository.findById(toSave.getId())).isNull();
+		assertThat(this.repository.findById(sessionId)).isNull();
 	}
 
 	private String getSecurityName() {

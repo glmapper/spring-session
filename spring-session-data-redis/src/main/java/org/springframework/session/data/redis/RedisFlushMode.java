@@ -20,7 +20,7 @@ import org.springframework.session.SessionRepository;
 
 /**
  * Specifies when to write to the backing Redis instance.
- *
+ * 指定何时写入备份Redis实例。
  * @author Rob Winch
  * @since 1.1
  */
@@ -29,6 +29,8 @@ public enum RedisFlushMode {
 	 * Only writes to Redis when
 	 * {@link SessionRepository#save(org.springframework.session.Session)} is invoked. In
 	 * a web environment this is typically done as soon as the HTTP response is committed.
+	 *
+	 * 只有在调用save方法时执行，在web环境中这样做通常是尽快提交HTTP响应。
 	 */
 	ON_SAVE,
 
@@ -37,6 +39,9 @@ public enum RedisFlushMode {
 	 * {@link SessionRepository#createSession()} will write the session to Redis. Another
 	 * example is that setting an attribute on the session will also write to Redis
 	 * immediately.
+	 *
+	 * 这种模式下，就是只要有变更就会直接写到redis中，不会像ON_SAVE一样，在最后commit时一次性写入。
+	 *
 	 */
 	IMMEDIATE
 }

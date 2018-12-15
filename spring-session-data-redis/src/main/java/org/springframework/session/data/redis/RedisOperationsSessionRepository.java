@@ -261,7 +261,7 @@ public class RedisOperationsSessionRepository implements
 
 	/**
 	 * The default namespace for each key and channel in Redis used by Spring Session.
-	 * ??key?channel???
+	 * 存储的key的前缀
 	 */
 	public static final String DEFAULT_NAMESPACE = "spring:session";
 
@@ -821,6 +821,17 @@ public class RedisOperationsSessionRepository implements
 		/**
 		 * Saves any attributes that have been changed and updates the expiration of this
 		 * session.
+		 * 保存这个session中任何改变或者更新过过期时间的属性。这个怎么理解呢？
+		 *
+		 * 这里实际上就是如果调用了 setAttribute, removeAttribute,setMaxInactiveIntervalInSeconds,setLastAccessedTime这几个方法
+		 * spring-session才会将数据推送到redis。
+		 *
+		 *
+		 * 而在 SessionRepositoryRequestWrapper 覆写的getSession方法中,
+		 * 只有在创建session时才会调用setLastAccessedTime方法, 按照上面的结论该新建的session会被推送到redis
+		 * 
+		 * 但是使用本方法从redis取到的session里提取出来的数据,
+		 * 针对该数据做出的修改不会被推送到redis; 如果你想要它推送会redis, 那就麻烦你再次调用上面的四个方法中的某一个一次
 		 */
 		private void saveDelta() {
 			String sessionId = getId();
@@ -828,13 +839,18 @@ public class RedisOperationsSessionRepository implements
 			if (this.delta.isEmpty()) {
 				return;
 			}
+			//以 "spring:session:" + "sessions:" + sessionId 为key将值推入redis;
 			getSessionBoundHashOperations(sessionId).putAll(this.delta);
+			//sessionAttr:${PRINCIPAL_NAME_INDEX_NAME}
 			String principalSessionKey = getSessionAttrNameKey(
 					FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME);
+			//sessionAttr:${SPRING_SECURITY_CONTEXT}
 			String securityPrincipalSessionKey = getSessionAttrNameKey(
 					SPRING_SECURITY_CONTEXT);
+			//看下当前delta这个map中有没有principalSessionKey和securityPrincipalSessionKey这两个key
 			if (this.delta.containsKey(principalSessionKey)
 					|| this.delta.containsKey(securityPrincipalSessionKey)) {
+				// boundSetOps -> https://357029540.iteye.com/blog/2398914
 				if (this.originalPrincipalName != null) {
 					String originalPrincipalRedisKey = getPrincipalKey(
 							this.originalPrincipalName);
@@ -852,6 +868,7 @@ public class RedisOperationsSessionRepository implements
 
 			this.delta = new HashMap<>(this.delta.size());
 
+			// 更新session有效期时间
 			Long originalExpiration = (this.originalLastAccessTime != null)
 					? this.originalLastAccessTime.plus(getMaxInactiveInterval())
 							.toEpochMilli()
@@ -861,15 +878,23 @@ public class RedisOperationsSessionRepository implements
 		}
 
 		private void saveChangeSessionId(String sessionId) {
+			//判断和原始sessionId是否相同，只有不同才会执行
 			if (!sessionId.equals(this.originalSessionId)) {
+				//是不是新的session，这里怎么理解呢。对于一个新的session，sessionId和originalSessionId应该是一样的，且还没有存到redis中
 				if (!isNew()) {
+					//originalSessionIdKey -> spring:session:session:${originalSessionId}
 					String originalSessionIdKey = getSessionKey(this.originalSessionId);
+					//sessionIdKey -> spring:session:session:${sessionId}
 					String sessionIdKey = getSessionKey(sessionId);
+					//key值重命名
 					RedisOperationsSessionRepository.this.sessionRedisOperations.rename(
 							originalSessionIdKey, sessionIdKey);
+					// originalExpiredKey-> spring:session:sessions:expires:${originalSessionId}
 					String originalExpiredKey = getExpiredKey(this.originalSessionId);
+					// originalExpiredKey-> spring:session:sessions:expires:${sessionId}
 					String expiredKey = getExpiredKey(sessionId);
 					try {
+						//key值重命名
 						RedisOperationsSessionRepository.this.sessionRedisOperations.rename(
 								originalExpiredKey, expiredKey);
 					}
@@ -887,6 +912,11 @@ public class RedisOperationsSessionRepository implements
 
 	/**
 	 * Principal name resolver helper class.
+	 *
+	 *
+	 * 这个在FindByIndexNameSessionRepository类中说道,一个session所以包含当前主名称，比如username.
+	 * 那这里这个PrincipalNameResolver类的作用就是解析session中的主名称。
+	 *
 	 */
 	static class PrincipalNameResolver {
 		private SpelExpressionParser parser = new SpelExpressionParser();

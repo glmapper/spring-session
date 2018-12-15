@@ -261,6 +261,7 @@ public class RedisOperationsSessionRepository implements
 
 	/**
 	 * The default namespace for each key and channel in Redis used by Spring Session.
+	 * ??key?channel???
 	 */
 	public static final String DEFAULT_NAMESPACE = "spring:session";
 

@@ -37,6 +37,8 @@ import org.apache.commons.logging.LogFactory;
 /**
  * The default implementation of {@link CookieSerializer}.
  *
+ * CookieSerializer 接口的默认实现类
+ *
  * @author Rob Winch
  * @author Vedran Pavic
  * @author Eddú Meléndez
@@ -46,6 +48,11 @@ public class DefaultCookieSerializer implements CookieSerializer {
 
 	private static final Log logger = LogFactory.getLog(DefaultCookieSerializer.class);
 
+	/**
+	 * Bitset是Java中的一种数据结构。Bitset中主要存储的是二进制位,做的也都是位运算,每一位只用来存储0,1值,主要用于对数据的标记。
+	 *
+	 * domainValid,从命名可以看出，用来验证cookie domian的
+	 */
 	private static final BitSet domainValid = new BitSet(128);
 
 	static {
@@ -62,20 +69,48 @@ public class DefaultCookieSerializer implements CookieSerializer {
 		domainValid.set('-');
 	}
 
+	/**
+	 * session cookie 的默认 name
+	 */
 	private String cookieName = "SESSION";
 
+	/**
+	 * cookie 的 secure 属性
+	 */
 	private Boolean useSecureCookie;
 
+	/**
+	 * cookie 的 isHttpOnly 属性
+	 */
 	private boolean useHttpOnlyCookie = true;
 
+	/**
+	 * cookie 的 path 域
+	 */
 	private String cookiePath;
 
+	/**
+	 * cookie 的最大有效期
+	 */
 	private Integer cookieMaxAge;
 
+	/**
+	 * cookie的作用域
+	 */
 	private String domainName;
 
 	private Pattern domainNamePattern;
 
+	/**
+	 * jvm_route是通过session_cookie这种方式来实现session粘性，将特定会话附属到特定tomcat上,从而解决session不同步问题，但无法解决宕机后会话转移问题。
+	 *
+	 * jvm_route的原理:
+	 * 1. 一开始请求过来，没有带session信息，jvm_route就根据round robin的方法，发到一台tomcat上面。
+	 * 2. tomcat添加上session 信息，并返回给客户。
+	 * 3. 用户再此请求，jvm_route看到session中有后端服务器的名称，它就把请求转到对应的服务器上。
+	 *
+	 * 暂时jvm_route模块还不支持默认fair的模式。jvm_route的工作模式和fair是冲突的。对于某个特定用户，当一直为他服务的tomcat宕机后，默认情况下它会重试max_fails的次数，如果还是失败，就重新启用round robin的方式，而这种情况下就会导致用户的session丢失。
+	 */
 	private String jvmRoute;
 
 	private boolean useBase64Encoding = true;
@@ -345,11 +380,15 @@ public class DefaultCookieSerializer implements CookieSerializer {
 	 * careful not to output malicious characters like new lines to prevent from things
 	 * like <a href= "https://www.owasp.org/index.php/HTTP_Response_Splitting">HTTP
 	 * Response Splitting</a>.
+	 *
+	 * 设置不区分大小写的模式，用于从HttpServletRequest#getServerName()中提取域名。
+	 * 模式应该提供一个单独的分组，定义应该匹配的值。用户应该注意不要输出像新行这样的恶意字符，以防止HTTP响应分割。
 	 * </p>
 	 *
 	 * <p>
 	 * If the pattern does not match, then no domain will be set. This is useful to ensure
 	 * the domain is not set during development when localhost might be used.
+	 * 如果模式不匹配，则不会设置任何域。这有助于确保在开发过程中不设置域的问题，因为可能使用localhost。
 	 * </p>
 	 * <p>
 	 * An example value might be "^.+?\\.(\\w+\\.[a-z]+)$". For the given input, it would
